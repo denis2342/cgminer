@@ -6922,19 +6922,11 @@ int main(int argc, char *argv[])
 	if (!thr->q)
 		quit(1, "Failed to tq_new");
 
-	/* start work I/O thread */
-	if (thr_info_create(thr, NULL, workio_thread, thr))
-		quit(1, "workio thread create failed");
-
 	stage_thr_id = mining_threads + 1;
 	thr = &thr_info[stage_thr_id];
 	thr->q = tq_new();
 	if (!thr->q)
 		quit(1, "Failed to tq_new");
-	/* start stage thread */
-	if (thr_info_create(thr, NULL, stage_thread, thr))
-		quit(1, "stage thread create failed");
-	pthread_detach(thr->pth);
 
 	/* Create a unique get work queue */
 	getq = tq_new();
@@ -7045,6 +7037,17 @@ begin_bench:
 			cgpu->thr[j] = thr;
 		}
 	}
+
+	/* start work I/O thread */
+	thr = &thr_info[work_thr_id];
+	if (thr_info_create(thr, NULL, workio_thread, thr))
+		quit(1, "workio thread create failed");
+
+	/* start stage thread */
+	thr = &thr_info[stage_thr_id];
+	if (thr_info_create(thr, NULL, stage_thread, thr))
+		quit(1, "stage thread create failed");
+	pthread_detach(thr->pth);
 
 #ifdef HAVE_OPENCL
 	applog(LOG_INFO, "%d gpu miner threads started", gpu_threads);
