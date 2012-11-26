@@ -130,7 +130,7 @@ static int libztex_getFpgaState(struct libztex_device *ztex, struct libztex_fpga
 static int libztex_configureFpgaHS(struct libztex_device *ztex, const char* firmware, bool force, char bs)
 {
 	struct libztex_fpgastate state;
-	const int transactionBytes = 65536;
+	const int transactionBytes = 16384;
 	unsigned char buf[transactionBytes], settings[2];
 	int tries, cnt, buf_p, i;
 	ssize_t pos = 0;
@@ -325,6 +325,7 @@ int libztex_configureFpga(struct libztex_device *ztex)
 
 	strcpy(buf, ztex->bitFileName);
 	strcat(buf, ".bit");
+	applog(LOG_ERR, "%s: fn='%s'", __func__, buf);
 	rv = libztex_configureFpgaHS(ztex, buf, true, 2); 
 	if (rv != 0)
 		rv = libztex_configureFpgaLS(ztex, buf, true, 2); 
@@ -475,7 +476,7 @@ int libztex_prepare_device(struct libusb_device *dev, struct libztex_device** zt
 
 	cnt = libusb_control_transfer(newdev->hndl, 0xc0, 0x22, 0, 0, buf, 40, 500);
 	if (unlikely(cnt < 0)) {
-		applog(LOG_ERR, "Ztex check device: Failed to read ztex descriptor with err %d", cnt);
+		applog(LOG_ERR, "Ztex check device 1: Failed to read ztex descriptor with err %d", cnt);
 		return cnt;
 	}
 	
@@ -509,13 +510,13 @@ int libztex_prepare_device(struct libusb_device *dev, struct libztex_device** zt
 	newdev->moduleReserved[10] = buf[28];
 	newdev->moduleReserved[11] = buf[29];
 
-
-	cnt = libusb_control_transfer(newdev->hndl, 0xc0, 0x82, 0, 0, buf, 64, 500);
+	cnt = libusb_control_transfer(newdev->hndl, 0xc0, 0x22, 0, 0, buf, 64, 500);
+//	cnt = libusb_control_transfer(newdev->hndl, 0xc0, 0x82, 0, 0, buf, 64, 500);
 	if (unlikely(cnt < 0)) {
-		applog(LOG_ERR, "Ztex check device: Failed to read ztex descriptor with err %d", cnt);
+		applog(LOG_ERR, "Ztex check device 2: Failed to read ztex descriptor with err %s", libusb_error_name(cnt));
 		return cnt;
 	}
-
+#if 0
 	if (unlikely(buf[0] != 5)) {
 		if (unlikely(buf[0] != 2 && buf[0] != 4)) {
 			applog(LOG_ERR, "Invalid BTCMiner descriptor version. Firmware must be updated (%d).", buf[0]);
@@ -523,7 +524,7 @@ int libztex_prepare_device(struct libusb_device *dev, struct libztex_device** zt
 		}
 		applog(LOG_WARNING, "Firmware out of date (%d).", buf[0]);
 	}
-
+#endif
 	i = buf[0] > 4? 11: (buf[0] > 2? 10: 8);
 
 	while (cnt < 64 && buf[cnt] != 0)
@@ -535,7 +536,10 @@ int libztex_prepare_device(struct libusb_device *dev, struct libztex_device** zt
 
 	newdev->bitFileName = malloc(sizeof(char) * (cnt + 1));
 	memcpy(newdev->bitFileName, &buf[i], cnt);
-	newdev->bitFileName[cnt] = 0;	
+	newdev->bitFileName[cnt] = 0;
+	applog(LOG_ERR, "bitstream file name: %s", newdev->bitFileName);
+	strcpy(newdev->bitFileName, "ztex_ufm1_15y1");
+	applog(LOG_ERR, "bitstream file name: %s", newdev->bitFileName);
 
 	newdev->numNonces = buf[1] + 1;
 	newdev->offsNonces = ((buf[2] & 255) | ((buf[3] & 255) << 8)) - 10000;
