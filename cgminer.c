@@ -7026,8 +7026,19 @@ begin_bench:
 				tq_push(thr->q, &ping);
 			}
 
-			if (cgpu->api->thread_prepare && !cgpu->api->thread_prepare(thr))
+			if (cgpu->api->thread_prepare && !cgpu->api->thread_prepare(thr)) {
+				tq_free(thr->q);
+				memmove(&thr_info[k], &thr_info[k+1], sizeof(*thr_info)*(total_threads-k-1));
+				memmove(&cgpu->thr[j], &cgpu->thr[j+1], sizeof(*cgpu->thr)*(cgpu->threads-j));
+				j--;
+				k--;
+				mining_threads--;
+				cgpu->threads--;
+				work_thr_id--;
+				stage_thr_id--;
+				total_threads--;
 				continue;
+			}
 
 			thread_reportout(thr);
 
@@ -7035,6 +7046,12 @@ begin_bench:
 				quit(1, "thread %d create failed", thr->id);
 
 			cgpu->thr[j] = thr;
+		}
+		if (0 == cgpu->threads) {
+			if (i+1 < total_devices)
+				memmove(&devices[i], &devices[i+1], sizeof(*devices)*(total_devices-i-1));
+			i--;
+			total_devices--;
 		}
 	}
 
