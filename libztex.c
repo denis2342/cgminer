@@ -150,13 +150,20 @@ static enum check_result libztex_checkDevice(struct libusb_device *dev)
 		applog(LOG_ERR, "%s: Incomplete firmware read: %d/%d", __func__, got_bytes, length);
 		goto done;
 	}
-	
+
 	// in buf[] is still the identifier of the dummy firmware
 	// use it to compare it with the new firmware
-	void *rv = memmem(fw_buf,got_bytes,buf,8);
+	char *rv = memmem(fw_buf,got_bytes,buf,8);
 	if (rv == NULL)
 	{
 		applog(LOG_ERR, "%s: found firmware is not ZTEX", __func__);
+		goto done;
+	}
+
+	// check for dummy firmware
+	if (rv[8] == 0)
+	{
+		applog(LOG_ERR, "%s: found a ZTEX dummy firmware", __func__);
 		goto done;
 	}
 
