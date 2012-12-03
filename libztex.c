@@ -63,7 +63,8 @@ static enum check_result libztex_checkDevice(struct libusb_device *dev)
 	struct libusb_device_descriptor desc;
 	int i, ret = CHECK_ERROR, err, cnt;
 	size_t got_bytes, length;
-	char buf[64], *firmware = "ztex_ufm1_15y1.bin", *fw_buf;
+	unsigned char buf[64], *fw_buf;
+	char *firmware = "ztex_ufm1_15y1.bin";
 
 	err = libusb_get_device_descriptor(dev, &desc);
 	if (unlikely(err != 0)) {
