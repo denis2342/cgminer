@@ -63,7 +63,8 @@ static enum check_result libztex_checkDevice(struct libusb_device *dev)
 	struct libusb_device_descriptor desc;
 	int i, ret = CHECK_ERROR, err, cnt;
 	size_t got_bytes, length;
-	char buf[64], *firmware = "ztex_ufm1_15y1.bin", *fw_buf;
+	unsigned char buf[64], *fw_buf;
+	char *firmware = "ztex_ufm1_15y1.bin";
 
 	err = libusb_get_device_descriptor(dev, &desc);
 	if (unlikely(err != 0)) {
@@ -275,8 +276,7 @@ static int libztex_configureFpgaHS(struct libztex_device *ztex, const char* firm
 	struct libztex_fpgastate state;
 	const int transactionBytes = 65536;
 	unsigned char buf[transactionBytes], settings[2];
-	int tries, cnt, buf_p, i;
-	ssize_t pos = 0;
+	int tries, cnt, err, i;
 	FILE *fp;
 
 	if (!libztex_checkCapability(ztex, CAPABILITY_HS_FPGA))
@@ -284,7 +284,7 @@ static int libztex_configureFpgaHS(struct libztex_device *ztex, const char* firm
 	libztex_getFpgaState(ztex, &state);
 	if (!force && state.fpgaConfigured) {
 		applog(LOG_INFO, "Bitstream already configured");
-		return 1;
+		return 0;
 	}
 	cnt = libusb_control_transfer(ztex->hndl, 0xc0, 0x33, 0, 0, settings, 2, 1000);
 	if (unlikely(cnt < 0)) {
@@ -301,59 +301,32 @@ static int libztex_configureFpgaHS(struct libztex_device *ztex, const char* firm
 			return -2;
 		}
 
-		while (pos < transactionBytes && !feof(fp)) {
-			buf[pos++] = getc(fp);
-		}
-
-		if (feof(fp))
-			pos--;
-
-		if (bs != 0 && bs != 1)
-			bs = libztex_detectBitstreamBitOrder(buf, transactionBytes < pos? transactionBytes: pos);
-
-
-		if (bs == 1)
-			libztex_swapBits(buf, pos);
-	 
 		libusb_control_transfer(ztex->hndl, 0x40, 0x34, 0, 0, NULL, 0, 1000);
 		// 0x34 - initHSFPGAConfiguration
 
-		buf_p = pos;
-		while (1) {
-			i = 0;
-			while (i < buf_p) {
-				if (libusb_bulk_transfer(ztex->hndl,
-				                                  settings[0],
-				                                  &buf[i],
-				                                  buf_p - i,
-				                                  &cnt, 1000) != 0) {
-					applog(LOG_ERR, "%s: Failed send hs fpga data", ztex->repr);
-					break;
-				}
-				usleep(500);
-				i += cnt;
-			}
-			if (i < buf_p || buf_p < transactionBytes)
-				break;
-			buf_p = 0;
-			while (buf_p < transactionBytes && !feof(fp)) {
-				buf[buf_p++] = getc(fp);
-			}
-			if (feof(fp))
-				buf_p--;
-			pos += buf_p;
-			if (buf_p == 0)
-				break;
+		do
+		{
+			int length = fread(buf,1,transactionBytes,fp);
+
+			if (bs != 0 && bs != 1)
+				bs = libztex_detectBitstreamBitOrder(buf, length);
 			if (bs == 1)
-				libztex_swapBits(buf, buf_p);
+				libztex_swapBits(buf, length);
+
+			err = libusb_bulk_transfer(ztex->hndl, settings[0], &buf[0], length, &cnt, 1000);
+			if (cnt != length)
+				applog(LOG_ERR, "%s: cnt != length", ztex->repr);
+			if (err != 0)
+				applog(LOG_ERR, "%s: Failed send hs fpga data", ztex->repr);
 		}
+		while (!feof(fp));
+
+		fclose(fp);
 
 		libusb_control_transfer(ztex->hndl, 0x40, 0x35, 0, 0, NULL, 0, 1000);
 		// 0x35 - finishHSFPGAConfiguration
 		if (cnt >= 0)
 			tries = 0;
-
-		fclose(fp);
 
 		libztex_getFpgaState(ztex, &state);
 		if (!state.fpgaConfigured) {
@@ -368,7 +341,6 @@ static int libztex_configureFpgaHS(struct libztex_device *ztex, const char* firm
 	nmsleep(200);
 	applog(LOG_INFO, "%s: HS FPGA configuration done", ztex->repr);
 	return 0;
-
 }
 
 static int libztex_configureFpgaLS(struct libztex_device *ztex, const char* firmware, bool force, char bs)
@@ -386,7 +358,7 @@ static int libztex_configureFpgaLS(struct libztex_device *ztex, const char* firm
 	libztex_getFpgaState(ztex, &state);
 	if (!force && state.fpgaConfigured) {
 		applog(LOG_DEBUG, "Bitstream already configured");
-		return 1;
+		return 0;
 	}
 
 	for (tries = 10; tries > 0; tries--) {
