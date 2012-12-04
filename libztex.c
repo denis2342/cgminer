@@ -1,5 +1,5 @@
 /**
- *   libztex.c - Ztex 1.15x fpga board support library
+ *   libztex.c - Ztex 1.15x/1.15y fpga board support library
  *
  *   Copyright (c) 2012 nelisky.btc@gmail.com
  *   Copyright (c) 2012 Denis Ahrens <denis@h3q.com>
@@ -64,7 +64,6 @@ static enum check_result libztex_checkDevice(struct libusb_device *dev)
 	int i, ret = CHECK_ERROR, err, cnt;
 	size_t got_bytes, length;
 	unsigned char buf[64], *fw_buf;
-	char *firmware = "ztex_ufm1_15y1.bin";
 
 	err = libusb_get_device_descriptor(dev, &desc);
 	if (unlikely(err != 0)) {
@@ -104,9 +103,8 @@ static enum check_result libztex_checkDevice(struct libusb_device *dev)
 	switch(buf[7])
 	{
 		case 13:
-			applog(LOG_ERR, "Found ztex board 1.15d or 1.15x but currently unsupported!");
-			ret = CHECK_IS_NOT_ZTEX;
-			goto done;
+			applog(LOG_ERR, "Found ztex board 1.15d or 1.15x");
+			break;
 		case 15:
 			applog(LOG_ERR, "Found ztex board 1.15y");
 			break;
@@ -122,9 +120,77 @@ static enum check_result libztex_checkDevice(struct libusb_device *dev)
 		goto done;
 	}
 
-	applog(LOG_ERR, "Found dummy firmware, try to send real firmware: %s", firmware);
+	applog(LOG_ERR, "Found dummy firmware, try to send real firmware");
 
-	fp = fopen(firmware,"rb");
+	// ----------------
+
+	/* We open code string descriptor retrieval and ASCII decoding here
+	 * in order to work around that libusb_get_string_descriptor_ascii()
+	 * in the FreeBSD libusb implementation hits a bug in ZTEX firmware,
+	 * where the device returns more bytes than requested, causing babble,
+	 * which makes FreeBSD return an error to us.
+	 *
+	 * Avoid the mess by doing it manually the same way as libusb-1.0.
+	 */
+
+	unsigned char buf2[64];
+	uint16_t langid;
+	char productString[32];
+
+	cnt = libusb_control_transfer(hndl, LIBUSB_ENDPOINT_IN,
+								  LIBUSB_REQUEST_GET_DESCRIPTOR, (LIBUSB_DT_STRING << 8) | 0,
+								  0x0000, buf2, sizeof(buf2), 1000);
+	if (unlikely(cnt < 0)) {
+		applog(LOG_ERR, "Ztex check device: Failed to read device LANGIDs with err %d", cnt);
+		return cnt;
+	}
+
+	langid = libusb_le16_to_cpu(((uint16_t *)buf2)[1]);
+
+	cnt = libusb_control_transfer(hndl, LIBUSB_ENDPOINT_IN,
+								  LIBUSB_REQUEST_GET_DESCRIPTOR,
+								  (LIBUSB_DT_STRING << 8) | desc.iProduct,
+								  langid, buf2, sizeof(buf2), 1000);
+	if (unlikely(cnt < 0)) {
+		applog(LOG_ERR, "Ztex check device: Failed to read device productString with err %d", cnt);
+		return cnt;
+	}
+
+	/* num chars = (all bytes except bLength and bDescriptorType) / 2 */
+	for (i = 0; i <= (cnt - 2) / 2 && i < (int)sizeof(productString)-1; i++)
+		productString[i] = buf2[2 + i*2];
+
+	productString[i] = 0;
+
+	applog(LOG_ERR, "productString: %s", productString);
+
+	// ----------------
+
+	unsigned char productID2 = buf[7];
+	char *firmware = NULL;
+
+	if (strcmp("USB-FPGA Module 1.15d (default)",productString) == 0 && productID2 == 13)
+	{
+		firmware = "ztex_ufm1_15d4.bin";
+	}
+	else if (strcmp("USB-FPGA Module 1.15x (default)",productString) == 0 && productID2 == 13)
+	{
+		firmware = "ztex_ufm1_15d4.bin";
+	}
+	else if (strcmp("USB-FPGA Module 1.15y (default)",productString) == 0 && productID2 == 15)
+	{
+		firmware = "ztex_ufm1_15y1.bin";
+	}
+
+	if (firmware == NULL)
+	{
+		applog(LOG_ERR, "could not figure out which firmware to use");
+		goto done;
+	}
+
+	applog(LOG_ERR, "real firmware filename: %s",firmware);
+
+	fp = open_bitstream("ztex", firmware);
 	if (!fp) {
 		applog(LOG_ERR, "failed to open firmware file '%s'", firmware);
 		goto done;
