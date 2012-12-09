@@ -241,9 +241,11 @@ static int64_t ztex_scanhash(struct thr_info *thr, struct work *work,
 
 	overflow = false;
 
+	int sleeptime = 250;
+
 	applog(LOG_DEBUG, "%s: entering poll loop", ztex->repr);
 	while (!(overflow || thr->work_restart)) {
-		nmsleep(250);
+		nmsleep(sleeptime);
 		if (thr->work_restart) {
 			applog(LOG_DEBUG, "%s: New work detected", ztex->repr);
 			break;
@@ -282,11 +284,24 @@ static int64_t ztex_scanhash(struct thr_info *thr, struct work *work,
 #endif
 			if (nonce > noncecnt)
 				noncecnt = nonce;
-			if (((nonce & 0x7fffffff) >> 4) < ((lastnonce[i] & 0x7fffffff) >> 4)) {
+			if (nonce < lastnonce[i]) {
 				applog(LOG_DEBUG, "%s: overflow nonce=%0.8x lastnonce=%0.8x", ztex->repr, nonce, lastnonce[i]);
 				overflow = true;
+				noncecnt = 0xffffffff;
 			} else
+			{
+				double rest = 4294967295 - nonce;
+				double diff = nonce - lastnonce[i];
+				double newtime = sleeptime * rest / diff;
+				if (newtime >= 249)
+					sleeptime = 250;
+				else
+				{
+					sleeptime = newtime + 1;
+					applog(LOG_DEBUG,"%s: sleeptime: %d rest: %.0f diff: %.0f", ztex->repr, sleeptime, rest, diff);
+				}
 				lastnonce[i] = nonce;
+			}
 #if !(defined(__BIGENDIAN__) || defined(MIPSEB))
 			nonce = swab32(nonce);
 #endif
