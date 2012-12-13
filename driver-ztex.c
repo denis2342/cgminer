@@ -163,10 +163,7 @@ static bool ztex_checkNonce(struct libztex_device *ztex,
 	hdata->hash7 = swab32(hdata->hash7);
 #endif
 
-	work->data[64 + 12 + 0] = (hdata->nonce >> 0) & 0xff;
-	work->data[64 + 12 + 1] = (hdata->nonce >> 8) & 0xff;
-	work->data[64 + 12 + 2] = (hdata->nonce >> 16) & 0xff;
-	work->data[64 + 12 + 3] = (hdata->nonce >> 24) & 0xff;
+	data32[76/4] = hdata->nonce;
 
 	for (i = 0; i < 80 / 4; i++)
 		swap32[i] = swab32(data32[i]);
